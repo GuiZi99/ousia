@@ -2,11 +2,26 @@ name: Test
 
 on:
   push:
-    branches: [master]
   pull_request:
-    branches: [master]
 
 jobs:
+  get-meminit:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt-get install autoconf automake autotools-dev curl python3 libmpc-dev libmpfr-dev libgmp-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev
+      - name: Prepare meminit
+        run: |
+          make gcc
+          make riscv-tests
+          make meminit
+      - uses: actions/upload-artifact@v2
+        with:
+          name: my-meminit
+          path: meminit
   get-verilog:
     runs-on: ubuntu-20.04
     steps:
@@ -19,16 +34,14 @@ jobs:
           sudo pip install fusesoc
       - name: Prepare Verilog
         run: |
-          git submodule update --init --depth 1
-          sbt run
           fusesoc init -y
-          fusesoc --cores-root=. run ousia
+          make build
       - uses: actions/upload-artifact@v2
         with:
           name: my-verilog
           path: build
   riscv-tests:
-    needs: get-verilog
+    needs: [get-verilog, get-meminit]
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -41,12 +54,14 @@ jobs:
         with:
           name: my-verilog
           path: build
+      - uses: actions/download-artifact@v2
+        with:
+          name: my-meminit
+          path: meminit
       - name: Test
-        run: |
-          cp build/ousia_0/src/ousia_0/Naive.v .
-          pytest tb/test.py --numprocesses auto -k inst
+        run: make test-inst
   misc-tests:
-    needs: get-verilog
+    needs: [get-verilog, get-meminit]
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
@@ -59,7 +74,9 @@ jobs:
         with:
           name: my-verilog
           path: build
+      - uses: actions/download-artifact@v2
+        with:
+          name: my-meminit
+          path: meminit
       - name: Test
-        run: |
-          cp build/ousia_0/src/ousia_0/Naive.v .
-          pytest tb/test.py --numprocesses auto -k 'not inst'
+        run: make test-misc
